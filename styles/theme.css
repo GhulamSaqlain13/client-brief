@@ -1,0 +1,125 @@
+/* Interaction and appearance controls share the app's semantic tokens. */
+body {
+  font-family:
+    "Segoe UI",
+    -apple-system,
+    BlinkMacSystemFont,
+    Arial,
+    sans-serif;
+}
+.primary,
+.brand-icon {
+  color: var(--on-accent);
+}
+.primary:hover {
+  border-color: var(--accent-hover);
+}
+.theme-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 8px 0 0;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 11px;
+}
+.theme-select select {
+  width: auto;
+  padding: 3px 1px;
+  margin: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.theme-select select:focus-visible {
+  outline: 2px solid var(--focus);
+}
+.theme-select option {
+  background: var(--surface);
+  color: var(--ink);
+}
+.popup-appearance {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.popup .brand {
+  font-size: 21px;
+  gap: 9px;
+  justify-content: flex-start;
+}
+.popup .brand > span:last-child {
+  display: inline;
+}
+.popup-appearance + h2 {
+  margin-top: 15px;
+}
+.empty-art {
+  transform: none;
+  border-radius: 20px;
+}
+.empty-art > span {
+  transform: none;
+}
+.stat {
+  box-shadow: 0 3px 14px var(--shadow);
+}
+.stat:nth-child(1) > span svg {
+  color: var(--accent);
+}
+.stat:nth-child(2) > span svg {
+  color: var(--success);
+}
+.stat:nth-child(3) > span svg {
+  color: var(--warning);
+}
+.icon-button,
+.primary,
+.secondary,
+.nav-item,
+.project-link {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+::selection {
+  background: var(--soft);
+  color: var(--ink);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.search:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
+@media print {
+  :root[data-theme] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --ink: #202638;
+  }
+  body {
+    background: #ffffff;
+    color: #202638;
+  }
+  .theme-select {
+    display: none;
+  }
+}

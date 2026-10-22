@@ -1,0 +1,353 @@
+/* Readable product typography, using native fonts with no remote requests. */
+:root {
+  --font-ui:
+    "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", sans-serif;
+  --text-caption: 12px;
+  --text-small: 13px;
+  --text-body: 15px;
+  --text-heading: 20px;
+}
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: 1.55;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+h1 {
+  font-size: clamp(28px, 2.5vw, 34px);
+  letter-spacing: -0.7px;
+}
+h2,
+.section-heading h2 {
+  font-size: var(--text-heading);
+  letter-spacing: -0.25px;
+}
+h3,
+.brief-section-heading h3 {
+  font-size: var(--text-body);
+  letter-spacing: 0;
+}
+small {
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+.brand,
+.popup .brand {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.ai {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.workspace,
+.user {
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+.workspace small,
+.user small,
+.privacy-note small,
+.project-link small {
+  font-size: var(--text-caption);
+}
+.nav-label {
+  font-size: var(--text-caption);
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+.nav-item,
+.project-link {
+  font-size: 14px;
+}
+.nav-item > span,
+.section-heading h2 span {
+  font-size: var(--text-caption);
+}
+.sidebar-empty {
+  font-size: var(--text-small);
+  line-height: 1.65;
+}
+.privacy-note {
+  font-size: var(--text-small);
+}
+.breadcrumb,
+.top-actions {
+  font-size: var(--text-small);
+}
+.eyebrow,
+.pill {
+  font-size: var(--text-small);
+  letter-spacing: 0.2px;
+  font-weight: 500;
+}
+.heading-row p,
+.muted,
+.empty-state p {
+  font-size: var(--text-body);
+  line-height: 1.7;
+}
+.primary,
+.secondary {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  padding: 11px 16px;
+}
+.text-button {
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+.stat > span {
+  font-size: 14px;
+  line-height: 1.45;
+}
+.stat strong {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  font-variant-numeric: tabular-nums;
+}
+.stat small {
+  font-size: var(--text-small);
+}
+.search {
+  width: 280px;
+}
+.search input {
+  font-size: var(--text-small);
+  padding: 11px 0;
+}
+.empty-state h2 {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.45px;
+}
+.empty-features,
+.page-footer {
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+.title-with-badge h2 {
+  font-size: var(--text-heading);
+  line-height: 1.4;
+}
+.project-title p {
+  font-size: var(--text-small);
+}
+.badge {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.tabs {
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.tabs button {
+  font-size: var(--text-small);
+  line-height: 1.45;
+}
+.brief-toolbar {
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+.brief-toolbar > div {
+  align-items: baseline;
+}
+.brief-toolbar > div > .local-dot {
+  align-self: center;
+}
+.brief-section {
+  padding: 26px 0;
+}
+.brief-item {
+  padding: 15px;
+}
+.brief-item p,
+.diff p {
+  font-size: var(--text-body);
+  line-height: 1.75;
+}
+.brief-item > small,
+.brief-item details,
+.diff small,
+.unknown span {
+  font-size: var(--text-caption);
+}
+.unknown {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.unknown span {
+  display: block;
+  margin-top: 3px;
+}
+.export-bar > span,
+.inline-info,
+.source-card details {
+  font-size: var(--text-small);
+  line-height: 1.7;
+}
+.source-heading {
+  font-size: 14px;
+  align-items: flex-start;
+}
+.source-card pre,
+.print-page pre {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: 1.75;
+}
+.notice,
+.capture-banner,
+.capture-banner strong {
+  font-size: 14px;
+  line-height: 1.6;
+}
+label {
+  font-size: 14px;
+  font-weight: 500;
+}
+input,
+textarea,
+select {
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+.modal-heading h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.theme-select,
+.theme-select select {
+  font-size: var(--text-small);
+}
+.theme-select {
+  padding: 4px 8px;
+}
+.popup h2 {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.popup-footer {
+  font-size: var(--text-caption);
+}
+@media (max-width: 1000px) {
+  .stats {
+    gap: 12px;
+  }
+  .stat {
+    padding: 18px;
+  }
+  .heading-row {
+    flex-wrap: wrap;
+  }
+  .project-header {
+    flex-wrap: wrap;
+  }
+  .title-with-badge {
+    gap: 8px;
+  }
+  .brief-toolbar,
+  .export-bar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 760px) {
+  .sidebar .brand {
+    font-size: 0;
+  }
+  .search {
+    width: 100%;
+  }
+  .stat {
+    padding: 14px 12px;
+  }
+  .stat > span,
+  .stat small {
+    font-size: var(--text-caption);
+  }
+  .stat strong {
+    font-size: 29px;
+  }
+  .title-with-badge h2 {
+    font-size: 19px;
+    overflow-wrap: anywhere;
+  }
+  .tabs {
+    column-gap: 18px;
+    row-gap: 0;
+  }
+  .tabs button {
+    font-size: var(--text-small);
+  }
+  .empty-features {
+    font-size: var(--text-caption);
+  }
+  .page-footer {
+    align-items: flex-start;
+  }
+  .export-bar > div {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 480px) {
+  .breadcrumb {
+    font-size: 0;
+    gap: 0;
+  }
+  .breadcrumb > svg {
+    display: none;
+  }
+  .breadcrumb > span {
+    font-size: var(--text-small);
+  }
+  .top-actions {
+    font-size: var(--text-caption);
+  }
+  .stats {
+    gap: 8px;
+  }
+  .stat {
+    padding: 14px 10px;
+  }
+  .primary,
+  .secondary {
+    white-space: normal;
+  }
+  .modal-heading h2 {
+    font-size: 22px;
+  }
+  .modal .button-row > button {
+    flex: 1 1 180px;
+  }
+  .source-heading {
+    flex-wrap: wrap;
+  }
+}
+@media print {
+  .print-page pre {
+    font-size: 11pt;
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "ClientBrief AI",
+  "version": "0.1.0",
+  "description": "Turn selected client conversations into evidence-linked project briefs. Local-first preview.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "contextMenus", "sidePanel"],
+  "action": {
+    "default_title": "Open ClientBrief",
+    "default_popup": "popup/index.html"
+  },
+  "side_panel": { "default_path": "index.html" },
+  "background": { "service_worker": "background.js" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  }
+}
