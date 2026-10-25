@@ -16,7 +16,7 @@ Core workflow: user selects or pastes conversation text -> previews and confirms
 ## MVP scope
 - Manual selection and pasted text capture.
 - Client and project create/read/update/delete.
-- Six extraction sections: overview, requirements, deliverables, timeline, budget, questions.
+- Six extraction sections: overview, requirements, deliverables, timeline, budget, questions. The user added a seventh, `exclusions` ("Not included"), on 2026-10-25.
 - Evidence links, manual edits, and explicit baseline approval.
 - Comparison of new messages with the approved baseline.
 - Markdown/PDF export, privacy settings, and data deletion.
@@ -45,6 +45,8 @@ Storage uses chrome.storage.local in the extension and localStorage during web d
 Commands: `npm run dev`, `npm run typecheck`, `npm test`, `npm run build`, `npm run test:ui` (requires installed Microsoft Edge and a fresh build). Domain tests live in `tests/model.test.ts`; browser checks live in `scripts/smoke-test.mjs`.
 
 Quality commands also include `npm run lint` and `npm run format`. UI typography now uses bundled Inter Variable via Fontsource (no remote fonts). `FEATURES.md` records completed local features and pending integrations. The user explicitly chose to keep AI processing local and choose a hosted provider later; do not connect a provider or present the keyword organizer as an LLM.
+
+Visual reference: `ClientBrief AI — Projects redesign.html` (user-supplied design). Its palette is the source of truth for color tokens in `styles/globals.css` (accent #5A52C7, ink #171A2C, bg #F6F6FB, line #E7E7F0, deep #1E1B4B, success #17855F, warning #B5690A) with a derived dark theme. `styles/redesign.css` (loaded last) holds the redesign layout and illustration colors; `components/Illustrations.tsx` holds its SVG artwork. Use tokens, never hard-coded colors, in components.
 
 Use native accessible dialogs and reusable feature components instead of browser prompts. Preserve runtime validation and source-reference checks in `lib/validation.ts`, CAS/write locks in storage, and editor snapshots for cross-window conflicts. Approved scope changes must go through `editItem`/`reviewProposal`; question workflow metadata and milestones are separate from immutable approved text.
 

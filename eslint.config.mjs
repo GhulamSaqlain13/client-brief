@@ -36,6 +36,7 @@ export default tseslint.config(
       "artifacts/**",
       ".npm-cache/**",
       "next-env.d.ts",
+      "public/pdf.worker.min.js",
     ],
   },
   js.configs.recommended,

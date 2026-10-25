@@ -3,7 +3,9 @@ import {
   ArrowUp,
   Download,
   FileText,
+  Lightbulb,
   LockKeyhole,
+  MessageSquareQuote,
   Plus,
   ShieldCheck,
   Trash2,
@@ -23,6 +25,9 @@ export default function BriefView({
   onReorder,
   onApprove,
   onExport,
+  onSummary,
+  exclusionSuggestions,
+  onSuggestExclusion,
   busy,
 }: {
   project: Project;
@@ -32,9 +37,22 @@ export default function BriefView({
   onReorder: (i: Item, direction: number) => void;
   onApprove: () => void;
   onExport: (format: "markdown" | "json" | "csv" | "pdf") => void;
+  onSummary: () => void;
+  exclusionSuggestions: string[];
+  onSuggestExclusion: (text: string) => void;
   busy: boolean;
 }) {
   const pending = project.proposals.some((p) => p.status === "pending");
+  const listed = new Set(project.items.map((i) => i.text.toLowerCase()));
+  const exclusionIdeas = exclusionSuggestions.filter(
+    (s) => !listed.has(s.toLowerCase()),
+  );
+  const speakerLabel = (item: Item) => {
+    if (!item.speaker) return "";
+    const role = project.sources.find((s) => s.id === item.sourceId)
+      ?.speakers?.[item.speaker];
+    return `${role === "me" ? "You" : role === "other" ? "Other" : "Client"} (${item.speaker})${item.sentAt ? ` · ${item.sentAt}` : ""}`;
+  };
   return (
     <>
       <div className="brief-toolbar">
@@ -62,7 +80,7 @@ export default function BriefView({
       <div className="brief-grid">
         {sections.map((section) => (
           <section
-            className="brief-section"
+            className={`brief-section ${section === "exclusions" ? "wide" : ""}`}
             key={section}
             aria-label={labels[section]}
           >
@@ -79,7 +97,11 @@ export default function BriefView({
             {!project.items.some((i) => i.section === section) && (
               <p className="unknown">
                 Not mentioned
-                <span>Add a conversation or enter a detail manually.</span>
+                <span>
+                  {section === "exclusions"
+                    ? "List what this project does not include, so the client can't assume it."
+                    : "Add a conversation or enter a detail manually."}
+                </span>
               </p>
             )}
             {project.items
@@ -117,6 +139,7 @@ export default function BriefView({
                     <span>
                       {item.manual ? "Manually entered" : "Source linked"}
                     </span>
+                    {item.speaker && <span>{speakerLabel(item)}</span>}
                   </div>
                   {item.excerpt && (
                     <details>
@@ -152,6 +175,24 @@ export default function BriefView({
                   )}
                 </article>
               ))}
+            {section === "exclusions" && exclusionIdeas.length > 0 && (
+              <div className="suggestion-chips">
+                <small>
+                  <Lightbulb size={13} /> Common exclusions for this project
+                  type
+                </small>
+                {exclusionIdeas.map((s) => (
+                  <button
+                    key={s}
+                    className="chip"
+                    disabled={busy}
+                    onClick={() => onSuggestExclusion(s)}
+                  >
+                    <Plus size={13} /> {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
         ))}
       </div>
@@ -160,6 +201,13 @@ export default function BriefView({
           <LockKeyhole size={15} /> Export the latest approved version
         </span>
         <div>
+          <button
+            className="secondary"
+            onClick={onSummary}
+            disabled={!project.versions.length}
+          >
+            <MessageSquareQuote size={15} /> Client summary
+          </button>
           {(["markdown", "json", "csv", "pdf"] as const).map((format) => (
             <button
               key={format}

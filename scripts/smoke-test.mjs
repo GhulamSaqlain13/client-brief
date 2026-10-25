@@ -23,6 +23,7 @@ const server = createServer(async (req, res) => {
       ".js": "application/javascript",
       ".css": "text/css",
       ".json": "application/json",
+      ".mjs": "application/javascript",
       ".woff2": "font/woff2",
     };
     res.setHeader(
@@ -185,6 +186,136 @@ try {
   await page
     .getByRole("heading", { name: "Design approval", exact: true })
     .waitFor();
+  // Scope additions offer a user-priced change order without changing scope.
+  await capture("Please also add a blog page.");
+  await page
+    .getByRole("combobox", { name: "Classification" })
+    .selectOption("new feature");
+  await click("Draft change order");
+  await page.getByLabel("Additional price (optional)").fill("150");
+  await page.getByLabel("Currency", { exact: true }).fill("USD");
+  assert.match(
+    await page.getByLabel("Message to client").inputValue(),
+    /brief v2\)\. The additional cost would be \$150\.00/,
+  );
+  await confirm("Save change order");
+  await page.getByText(/Change order draft · \$150\.00/).waitFor();
+  await page.screenshot({ path: "artifacts/change-order.png" });
+  await click("Reject");
+  // Revisions beyond the agreed limit are flagged.
+  await page.getByRole("tab", { name: "Revisions", exact: true }).click();
+  await click("Set limit");
+  await page.getByLabel("Revisions included").fill("1");
+  await confirm("Save limit");
+  for (const note of ["Change hero colors", "Swap the photos"]) {
+    await click("Log revision");
+    await page.getByLabel("What did the client ask to change?").fill(note);
+    await confirm("Save revision");
+  }
+  await page.getByText("2 of 1 used", { exact: true }).waitFor();
+  await page.getByText("beyond limit", { exact: true }).waitFor();
+  await click("Draft extra-revision request");
+  assert.match(
+    await page.getByLabel("Message to client").inputValue(),
+    /beyond the 1 revision included/,
+  );
+  await confirm("Save change order");
+  await page.getByText(/Extra request draft/).waitFor();
+  await page.screenshot({ path: "artifacts/revisions.png", fullPage: true });
+  await page.getByRole("tab", { name: "Project brief", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "Not included (out of scope)", exact: true })
+    .waitFor();
+  // Client summary is built from the approved scope.
+  await click("Client summary");
+  assert.match(
+    await page.getByLabel("Summary for the client").inputValue(),
+    /brief v2[\s\S]*What's included:[\s\S]*Not included:/,
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  // Readiness checklist from a project type.
+  await page.getByRole("tab", { name: "Checklist", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Project type" })
+    .selectOption("web");
+  await page.getByText("0% ready", { exact: true }).waitFor();
+  await page
+    .getByRole("combobox", { name: "Status: Hosting access" })
+    .selectOption("received");
+  await page.getByText(/^\d+% ready$/).waitFor();
+  // Payments: an overdue payment appears in the project and the dashboard.
+  await page.getByRole("tab", { name: "Payments", exact: true }).click();
+  await click("Add payment");
+  await page.getByLabel("Payment name").fill("Deposit");
+  await page.getByLabel("Amount (optional)").fill("100");
+  await page.getByLabel("Currency", { exact: true }).fill("USD");
+  await page.getByLabel("Due date (optional)").fill("2026-01-01");
+  await confirm("Save payment");
+  await page.getByText("overdue", { exact: true }).first().waitFor();
+  await page.screenshot({ path: "artifacts/payments.png" });
+  // Text-based PDF import runs locally through the packaged pdf.js worker.
+  const pdfText = "Hello from PDF";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${`BT /F1 18 Tf 20 60 Td (${pdfText}) Tj ET`.length} >>\nstream\nBT /F1 18 Tf 20 60 Td (${pdfText}) Tj ET\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((body, i) => {
+    const at = pdf.length;
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return at;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  await click("Add conversation");
+  await page.getByLabel("Import conversation file").setInputFiles({
+    name: "brief.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from(pdf),
+  });
+  await page.waitForFunction(
+    (text) =>
+      document
+        .querySelector("textarea[aria-label=Conversation]")
+        ?.value.includes(text),
+    pdfText,
+  );
+  // Speaker lines are detected for role correction.
+  await page
+    .getByLabel("Conversation", { exact: true })
+    .fill("Sara: Need a logo.\nMe: Sure, noted.\nSara: Thanks.");
+  await page.getByText("Who said what", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("combobox", { name: "Me" }).inputValue(),
+    "me",
+  );
+  await page.getByLabel("Conversation", { exact: true }).fill("");
+  await click("Save draft & close");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  // Dashboard attention list and client history.
+  await page
+    .getByRole("button", { name: "ClientBrief workspace", exact: true })
+    .click();
+  await page.getByText("Needs your attention", { exact: true }).waitFor();
+  await page.getByText(/Payment overdue: Deposit/).waitFor();
+  await page.screenshot({ path: "artifacts/attention.png", fullPage: true });
+  await page
+    .getByRole("button", { name: /^Clients/ })
+    .first()
+    .click();
+  await page.getByText(/accepted scope additions/).waitFor();
+  await page.screenshot({ path: "artifacts/clients.png" });
+  await page
+    .getByRole("button", { name: /^Projects/ })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: "Studio website redesign", exact: true })
+    .click();
   // Malformed restore is rejected without changing current data, then valid restore works.
   await page.getByRole("button", { name: "Privacy settings" }).click();
   await page.getByLabel("Restore workspace backup").setInputFiles({

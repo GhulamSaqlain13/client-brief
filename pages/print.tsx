@@ -2,7 +2,7 @@ import Head from "next/head";
 import { useEffect, useState } from "react";
 import { FileText, Printer } from "lucide-react";
 import { readStore } from "../lib/storage";
-import { labels, sections, type Project } from "../lib/model";
+import { labels, revisionSummary, sections, type Project } from "../lib/model";
 export default function Print() {
   const [project, setProject] = useState<Project>();
   const [error, setError] = useState("");
@@ -97,6 +97,11 @@ export default function Print() {
               )}
             </section>
           ))}
+          <section className="print-section">
+            <h2>Revision tracking</h2>
+            <p>{revisionSummary(project)}</p>
+            <small>Live record, not part of the approved version.</small>
+          </section>
           <section className="print-section">
             <h2>Evidence appendix</h2>
             {baseline.items

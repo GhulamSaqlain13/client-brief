@@ -7,3 +7,4 @@ artifacts/
 *.tsbuildinfo
 .env*
 !.env.example
+public/pdf.worker.min.js

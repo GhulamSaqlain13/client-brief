@@ -1,6 +1,7 @@
 import Head from "next/head";
 import { useEffect, useState } from "react";
 import {
+  AlarmClock,
   ArrowUpRight,
   FileText,
   MessageSquare,
@@ -10,10 +11,12 @@ import {
 import ThemeSelect from "../components/ThemeSelect";
 import { readStore, extension } from "../lib/storage";
 import type { Project } from "../lib/model";
+import { attention, type Attention } from "../lib/planning";
 
 export default function Popup() {
   const [project, setProject] = useState<Project>();
   const [count, setCount] = useState(0);
+  const [alerts, setAlerts] = useState<Attention[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -24,6 +27,7 @@ export default function Popup() {
         const store = await readStore();
         if (!alive) return;
         setCount(store.projects.length);
+        setAlerts(attention(store));
         setProject(store.projects.filter((p) => !p.archived).at(-1));
         if (extension()) {
           const data = await chrome.storage.local.get([
@@ -109,6 +113,13 @@ export default function Popup() {
                 ? `${project.client} · ${project.proposals.filter((p) => p.status === "pending").length} changes to review`
                 : `${count} projects · Private local workspace`}
             </p>
+            {alerts.length > 0 && (
+              <p className="field-hint">
+                <AlarmClock size={14} /> {alerts.length} item
+                {alerts.length === 1 ? "" : "s"} need attention:{" "}
+                {alerts[0].label}
+              </p>
+            )}
             {pending && (
               <p className="field-hint">
                 <MessageSquare size={14} /> A captured selection is ready to

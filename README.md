@@ -33,7 +33,7 @@ After changes, rebuild, reload the extension card and refresh any open extension
 - **Project library:** search project names, clients, captured text, requirements, tags and notes. Filter by archive state, platform or status; sort and page through results.
 - **Clients:** browse names grouped from project records. Reusing a client name keeps their projects together without mixing their briefs.
 - **Capture:** paste or import TXT, Markdown or raw CSV text. Review and edit it, optionally redact common sensitive patterns, then confirm. Draft text autosaves after 800 ms of inactivity. Exact duplicates are rejected using normalized SHA-256 hashes.
-- **Brief:** review six sections, inspect evidence, add/edit/remove items, set priority/owner/evidence state, and reorder draft items.
+- **Brief:** review six sections plus a "Not included (out of scope)" section, copy a client summary and record the client's quoted confirmation, inspect evidence, add/edit/remove items, set priority/owner/evidence state, and reorder draft items.
 - **Approval:** explicitly approve a baseline. Every extracted item must have valid evidence. Ambiguous or contradicted items need resolution. Approved versions remain immutable.
 - **Changes:** later captures and edits/removals become proposals. Classify them, add a review reason, then accept, reject or replace a section. Accepted proposals change the working draft; approve a new baseline to commit scope.
 - **Questions:** track open, asked, answered, blocked and no-longer-needed questions. Copy a clarification message and send it manually through your normal client channel.

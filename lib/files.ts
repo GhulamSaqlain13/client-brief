@@ -1,3 +1,4 @@
+import { threadLimit } from "./conversation";
 export function download(name: string, data: string, type = "text/markdown") {
   const url = URL.createObjectURL(new Blob([data], { type }));
   const link = document.createElement("a");
@@ -14,24 +15,22 @@ export async function copy(text: string) {
   await navigator.clipboard.writeText(text);
 }
 export async function readTextFile(file: File, backup = false) {
-  if (file.size > (backup ? 10 * 1024 * 1024 : 400000))
+  if (file.size > (backup ? 10 * 1024 * 1024 : 2 * 1024 * 1024))
     throw new Error(
       backup
         ? "Choose a backup smaller than 10 MB."
-        : "Choose a text file smaller than 400 KB.",
+        : "Choose a text file smaller than 2 MB.",
     );
   if (!backup && !/\.(txt|md|csv)$/i.test(file.name))
-    throw new Error(
-      "Supported imports: .txt, .md, and .csv. PDF import is not available yet.",
-    );
+    throw new Error("Supported imports: .txt, .md, .csv and text-based .pdf.");
   const text = await file.text();
   if (text.includes("\u0000"))
     throw new Error(
       "This looks like a binary file. Please choose a UTF-8 text file.",
     );
-  if (!backup && text.length > 100000)
+  if (!backup && text.length > threadLimit)
     throw new Error(
-      "Conversation exceeds 100,000 characters. Split it into smaller captures.",
+      `Conversation exceeds ${threadLimit.toLocaleString()} characters. Import it in smaller files.`,
     );
   return text;
 }

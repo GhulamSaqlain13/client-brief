@@ -1,6 +1,12 @@
 import { useState } from "react";
-import { Check, GitCompareArrows } from "lucide-react";
-import { labels, type Project, type Proposal } from "../lib/model";
+import { Check, FileSignature, GitCompareArrows } from "lucide-react";
+import {
+  formatAmount,
+  labels,
+  type Project,
+  type Proposal,
+} from "../lib/model";
+const billableCategories = ["new feature", "scope expansion"];
 const categories = [
   "new feature",
   "scope expansion",
@@ -16,9 +22,11 @@ function Change({
   proposal,
   busy,
   onReview,
+  onChangeOrder,
 }: {
   proposal: Proposal;
   busy: boolean;
+  onChangeOrder: (p: Proposal) => void;
   onReview: (
     p: Proposal,
     action: "accept" | "reject" | "replace",
@@ -68,6 +76,34 @@ function Change({
           )}
         </div>
       </div>
+      {proposal.hint && proposal.status === "pending" && (
+        <p className="field-hint">
+          Rule-based hint: {proposal.hint} Suggested classification:{" "}
+          {proposal.category}.
+        </p>
+      )}
+      {proposal.operation !== "remove" &&
+        (billableCategories.includes(category) || proposal.changeOrder) && (
+          <div className="change-order">
+            <FileSignature size={18} />
+            <span>
+              {proposal.changeOrder
+                ? `Change order ${proposal.changeOrder.status}${proposal.changeOrder.amount !== undefined ? ` · ${formatAmount(proposal.changeOrder.amount, proposal.changeOrder.currency)}` : ""}${proposal.changeOrder.extraDays !== undefined ? ` · +${proposal.changeOrder.extraDays} days` : ""}`
+                : proposal.status === "pending"
+                  ? "This adds work beyond the approved scope. Agree on price and time with the client before accepting it."
+                  : "No change order was recorded for this extra work."}
+            </span>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => onChangeOrder(proposal)}
+            >
+              {proposal.changeOrder
+                ? "Edit change order"
+                : "Draft change order"}
+            </button>
+          </div>
+        )}
       {proposal.status === "pending" ? (
         <>
           <div className="form-grid">
@@ -137,9 +173,11 @@ export default function ChangesView({
   project,
   busy,
   onReview,
+  onChangeOrder,
 }: {
   project: Project;
   busy: boolean;
+  onChangeOrder: (p: Proposal) => void;
   onReview: (
     p: Proposal,
     action: "accept" | "reject" | "replace",
@@ -197,7 +235,13 @@ export default function ChangesView({
         </div>
       )}
       {filtered.map((p) => (
-        <Change key={p.id} proposal={p} busy={busy} onReview={onReview} />
+        <Change
+          key={p.id}
+          proposal={p}
+          busy={busy}
+          onReview={onReview}
+          onChangeOrder={onChangeOrder}
+        />
       ))}
     </div>
   );

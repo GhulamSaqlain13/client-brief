@@ -53,3 +53,43 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         .catch(console.error);
     });
 });
+
+// Opt-in reminders. Alarms and notifications are optional permissions, so the
+// listener is attached only once the user has granted them.
+let remindersReady = false;
+function setUpReminders() {
+  if (remindersReady || !chrome.alarms?.onAlarm) return;
+  remindersReady = true;
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "clientbrief-reminders") remind().catch(console.error);
+  });
+  chrome.notifications?.onClicked.addListener(() => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("index.html") });
+  });
+}
+async function remind() {
+  if (!chrome.notifications) return;
+  const store = (await chrome.storage.local.get("clientbrief-v1"))[
+    "clientbrief-v1"
+  ];
+  if (!store?.settings?.reminders || !Array.isArray(store.projects)) return;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  let overdue = 0;
+  for (const project of store.projects) {
+    if (project.archived) continue;
+    for (const m of project.milestones || [])
+      if (m.status !== "completed" && m.due && m.due < today) overdue++;
+    for (const p of project.payments || [])
+      if (p.status !== "paid" && p.due && p.due < today) overdue++;
+  }
+  if (!overdue) return;
+  await chrome.notifications.create("clientbrief-overdue", {
+    type: "basic",
+    iconUrl: "icon-128.png",
+    title: "ClientBrief",
+    message: `${overdue} overdue milestone${overdue === 1 ? "" : "s"} or payment${overdue === 1 ? "" : "s"}. Open ClientBrief to review.`,
+  });
+}
+setUpReminders();
+chrome.permissions?.onAdded.addListener(setUpReminders);

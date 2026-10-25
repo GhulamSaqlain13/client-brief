@@ -1,6 +1,18 @@
 import {
+  checkChangeOrder,
+  checkEvidence,
   sections,
+  validDay,
   type Capture,
+  type ChangeOrder,
+  type ChecklistItem,
+  type ClientRecord,
+  type Confirmation,
+  type Payment,
+  type Settings,
+  type Evidence,
+  type Revision,
+  type RevisionPolicy,
   type Item,
   type Milestone,
   type Project,
@@ -8,6 +20,7 @@ import {
   type Store,
   type Version,
 } from "./model";
+import { templateIds } from "./templates";
 
 type RecordValue = Record<string, unknown>;
 function object(value: unknown): RecordValue {
@@ -93,6 +106,9 @@ function item(value: unknown): Item {
         "no longer needed",
       ]),
     ),
+    questionUpdatedAt: optional(v.questionUpdatedAt, date),
+    speaker: optional(v.speaker, (x) => nonempty(x, 40)),
+    sentAt: optional(v.sentAt, (x) => nonempty(x, 40)),
   };
 }
 function capture(value: unknown): Capture {
@@ -107,6 +123,16 @@ function capture(value: unknown): Capture {
     url,
     capturedAt: date(v.capturedAt),
     hash,
+    speakers: optional(v.speakers, (x) => {
+      const entries = Object.entries(object(x));
+      if (entries.length > 50) throw new Error("Too many speakers.");
+      return Object.fromEntries(
+        entries.map(([name, role]) => [
+          nonempty(name, 40),
+          enumeration(role, ["client", "me", "other"] as const),
+        ]),
+      );
+    }),
   };
 }
 function version(value: unknown): Version {
@@ -116,6 +142,55 @@ function version(value: unknown): Version {
   const number = integer(v.number);
   if (!number) throw new Error("Version numbers start at one.");
   return { number, approvedAt: date(v.approvedAt), items };
+}
+function changeOrder(value: unknown): ChangeOrder {
+  const v = object(value);
+  const result: ChangeOrder = {
+    amount: optional(v.amount, (x) => {
+      if (typeof x !== "number") throw new Error("Invalid amount.");
+      return x;
+    }),
+    currency: text(v.currency, 3),
+    extraDays: optional(v.extraDays, integer),
+    message: text(v.message, 5000),
+    status: enumeration(v.status, [
+      "draft",
+      "sent",
+      "accepted by client",
+      "declined by client",
+    ]),
+    updatedAt: date(v.updatedAt),
+  };
+  checkChangeOrder(result);
+  return result;
+}
+function evidence(v: RecordValue): Evidence {
+  return {
+    sourceId: optional(v.sourceId, nonempty),
+    excerpt: optional(v.excerpt, text),
+    manual: optional(v.manual, bool),
+  };
+}
+function revisionPolicy(value: unknown): RevisionPolicy {
+  const v = object(value);
+  const limit = integer(v.limit);
+  if (limit > 100) throw new Error("Invalid revision limit.");
+  return { ...evidence(v), limit };
+}
+function revision(value: unknown): Revision {
+  const v = object(value);
+  const requestedAt = text(v.requestedAt, 10);
+  if (!validDay(requestedAt)) throw new Error("Invalid revision date.");
+  return {
+    ...evidence(v),
+    id: nonempty(v.id),
+    requestedAt,
+    deliverable: text(v.deliverable, 200),
+    note: nonempty(v.note, 2000),
+    status: enumeration(v.status, ["requested", "in progress", "delivered"]),
+    counts: bool(v.counts),
+    changeOrder: optional(v.changeOrder, changeOrder),
+  };
 }
 function proposal(value: unknown): Proposal {
   const v = object(value);
@@ -130,6 +205,73 @@ function proposal(value: unknown): Proposal {
     category: optional(v.category, (x) => text(x, 100)),
     reason: optional(v.reason, (x) => text(x, 2000)),
     reviewedAt: optional(v.reviewedAt, date),
+    changeOrder: optional(v.changeOrder, changeOrder),
+    hint: optional(v.hint, (x) => text(x, 2000)),
+  };
+}
+function checklistItem(value: unknown): ChecklistItem {
+  const v = object(value);
+  return {
+    id: nonempty(v.id),
+    label: nonempty(v.label, 200),
+    status: enumeration(v.status, ["missing", "received", "not needed"]),
+    note: optional(v.note, (x) => text(x, 1000)),
+  };
+}
+function day(value: unknown): string {
+  const result = text(value, 10);
+  if (!validDay(result)) throw new Error("Invalid date.");
+  return result;
+}
+function payment(value: unknown): Payment {
+  const v = object(value);
+  return {
+    ...evidence(v),
+    id: nonempty(v.id),
+    title: nonempty(v.title, 200),
+    amount: optional(v.amount, (x) => {
+      if (typeof x !== "number") throw new Error("Invalid amount.");
+      return x;
+    }),
+    currency: text(v.currency, 3),
+    due: v.due === "" ? "" : day(v.due),
+    status: enumeration(v.status, ["due", "paid"]),
+    paidAt: optional(v.paidAt, (x) => (x === "" ? "" : day(x))),
+  };
+}
+function confirmation(value: unknown): Confirmation {
+  const v = object(value);
+  const version = integer(v.version);
+  if (!version) throw new Error("Invalid confirmation version.");
+  return {
+    id: nonempty(v.id),
+    version,
+    sourceId: nonempty(v.sourceId),
+    excerpt: nonempty(v.excerpt, 100000),
+    recordedAt: date(v.recordedAt),
+  };
+}
+function client(value: unknown): ClientRecord {
+  const v = object(value);
+  return {
+    id: nonempty(v.id),
+    name: nonempty(v.name, 100),
+    platform: optional(v.platform, (x) => text(x, 100)),
+    notes: optional(v.notes, (x) => text(x, 5000)),
+    createdAt: date(v.createdAt),
+  };
+}
+function settings(value: unknown): Settings {
+  const v = object(value);
+  const age = optional(v.questionAgeDays, integer);
+  if (age !== undefined && (age < 1 || age > 90))
+    throw new Error("Invalid question reminder age.");
+  return {
+    defaultTemplate: optional(v.defaultTemplate, (x) =>
+      enumeration(x, templateIds),
+    ),
+    questionAgeDays: age,
+    reminders: optional(v.reminders, bool),
   };
 }
 function milestone(value: unknown): Milestone {
@@ -179,8 +321,40 @@ function project(value: unknown): Project {
     tags: optional(v.tags, (x) => text(x, 500)),
     milestones: optional(v.milestones, (x) => list(x, milestone)),
     versionSequence: optional(v.versionSequence, integer),
+    revisionPolicy: optional(v.revisionPolicy, revisionPolicy),
+    revisions: optional(v.revisions, (x) => list(x, revision)),
+    template: optional(v.template, (x) => enumeration(x, templateIds)),
+    checklist: optional(v.checklist, (x) => list(x, checklistItem, 500)),
+    payments: optional(v.payments, (x) => list(x, payment, 500)),
+    confirmations: optional(v.confirmations, (x) => list(x, confirmation, 500)),
   };
   unique(p.items);
+  unique(p.revisions || []);
+  unique(p.checklist || []);
+  unique(p.payments || []);
+  unique(p.confirmations || []);
+  for (const e of [
+    ...(p.revisionPolicy ? [p.revisionPolicy] : []),
+    ...(p.revisions || []),
+    ...(p.payments || []),
+    ...(p.confirmations || []),
+  ])
+    checkEvidence(p, e);
+  if (
+    p.confirmations?.some(
+      (c) => !p.versions.some((v) => v.number === c.version),
+    )
+  )
+    throw new Error("A client confirmation refers to a missing version.");
+  for (const pay of p.payments || [])
+    if (pay.amount !== undefined) {
+      if (
+        !Number.isFinite(pay.amount) ||
+        pay.amount < 0 ||
+        !/^[A-Z]{3}$/.test(pay.currency)
+      )
+        throw new Error("Invalid payment amount.");
+    }
   unique(p.sources);
   unique(p.proposals);
   unique(p.milestones || []);
@@ -241,7 +415,20 @@ export function validateStore(value: unknown): Store {
     );
     if (Object.keys(drafts).some((key) => !projects.some((p) => p.id === key)))
       throw new Error("A draft refers to an unknown project.");
-    return { projects, drafts, revision: optional(v.revision, integer) };
+    const clients = optional(v.clients, (x) => list(x, client, 1000));
+    unique(clients || []);
+    if (
+      new Set((clients || []).map((c) => c.name.toLowerCase())).size !==
+      (clients || []).length
+    )
+      throw new Error("Duplicate client names.");
+    return {
+      projects,
+      drafts,
+      revision: optional(v.revision, integer),
+      clients,
+      settings: optional(v.settings, settings),
+    };
   } catch (error) {
     throw new Error(
       `Workspace data is invalid: ${error instanceof Error ? error.message : "unknown format"}`,

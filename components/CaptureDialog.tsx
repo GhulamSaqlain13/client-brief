@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, FileUp, ShieldCheck } from "lucide-react";
+import { ArrowDownUp, Check, FileUp, ShieldCheck } from "lucide-react";
 import Dialog from "./Dialog";
-import { redact } from "../lib/model";
+import { redact, type SpeakerRole } from "../lib/model";
 import { readTextFile } from "../lib/files";
+import {
+  captureLimit,
+  defaultRole,
+  knownSpeakers,
+  sortByTime,
+  splitThread,
+  threadLimit,
+} from "../lib/conversation";
 export type PendingCapture = { text: string; url: string; capturedAt: string };
 export default function CaptureDialog({
   projectTitle,
@@ -16,7 +24,12 @@ export default function CaptureDialog({
   initialText: string;
   initialUrl: string;
   onDraft: (text: string) => Promise<void>;
-  onSave: (text: string, url: string) => Promise<void>;
+  onSave: (
+    text: string,
+    url: string,
+    speakers: Record<string, SpeakerRole>,
+    progress: (done: number, total: number) => void,
+  ) => Promise<void>;
   onClose: () => void;
 }) {
   const [text, setText] = useState(initialText);
@@ -24,6 +37,11 @@ export default function CaptureDialog({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [roles, setRoles] = useState<Record<string, SpeakerRole>>({});
+  const [progress, setProgress] = useState("");
+  const speakers = knownSpeakers(text).slice(0, 20);
+  const role = (name: string) => roles[name] || defaultRole(name);
+  const parts = text.length > captureLimit ? splitThread(text).length : 1;
   const fileRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef(onDraft);
   draftRef.current = onDraft;
@@ -77,14 +95,16 @@ export default function CaptureDialog({
         <input
           ref={fileRef}
           type="file"
-          accept=".txt,.md,.csv"
+          accept=".txt,.md,.csv,.pdf"
           className="visually-hidden"
           aria-label="Import conversation file"
           onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
             try {
-              const value = await readTextFile(file);
+              const value = /.pdf$/i.test(file.name)
+                ? await (await import("../lib/pdf")).readPdf(file)
+                : await readTextFile(file);
               setText(value);
               setSaved(false);
               setError("");
@@ -99,8 +119,20 @@ export default function CaptureDialog({
           onClick={() => fileRef.current?.click()}
           disabled={busy}
         >
-          <FileUp size={16} /> Import text file
+          <FileUp size={16} /> Import file
         </button>
+        {!!sortByTime(text) && (
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              setText(sortByTime(text) || text);
+              setSaved(false);
+            }}
+          >
+            <ArrowDownUp size={16} /> Sort by message time
+          </button>
+        )}
         <button
           className="secondary"
           disabled={busy || !text}
@@ -113,9 +145,9 @@ export default function CaptureDialog({
         </button>
       </div>
       <p className="field-hint">
-        Imports: TXT, Markdown, or raw CSV text. Redaction covers common email,
-        international phone, and credential patterns. Review the result
-        manually.
+        Imports: TXT, Markdown, raw CSV, or text-based PDF (read on this
+        device). Redaction covers common email, international phone, and
+        credential patterns. Review the result manually.
       </p>
       <form
         onSubmit={async (event) => {
@@ -124,12 +156,19 @@ export default function CaptureDialog({
           setError("");
           try {
             await queue.current.catch(() => {});
-            await onSave(text, url);
+            await onSave(
+              text,
+              url,
+              Object.fromEntries(speakers.map((n) => [n, role(n)])),
+              (done, total) =>
+                setProgress(`Saving part ${done + 1} of ${total}…`),
+            );
             onClose();
           } catch (error) {
             setError((error as Error).message);
           } finally {
             setBusy(false);
+            setProgress("");
           }
         }}
       >
@@ -140,7 +179,7 @@ export default function CaptureDialog({
             autoFocus
             rows={10}
             required
-            maxLength={100000}
+            maxLength={threadLimit}
             value={text}
             disabled={busy}
             onChange={(e) => {
@@ -150,6 +189,34 @@ export default function CaptureDialog({
             placeholder="Paste relevant client messages. One item per line works best."
           />
         </label>
+        {speakers.length > 0 && (
+          <fieldset className="speaker-roles">
+            <legend>Who said what</legend>
+            <p className="field-hint">
+              Detected from &quot;Name: message&quot; lines. Correct the roles
+              if needed.
+            </p>
+            {speakers.map((name) => (
+              <label className="compact-label" key={name}>
+                {name}
+                <select
+                  value={role(name)}
+                  disabled={busy}
+                  onChange={(e) =>
+                    setRoles({
+                      ...roles,
+                      [name]: e.target.value as SpeakerRole,
+                    })
+                  }
+                >
+                  <option value="client">Client</option>
+                  <option value="me">Me</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <label>
           Source URL (optional)
           <input
@@ -162,7 +229,10 @@ export default function CaptureDialog({
           />
         </label>
         <div className="field-meta">
-          <span>{text.length.toLocaleString()} / 100,000 characters</span>
+          <span>
+            {text.length.toLocaleString()} characters
+            {parts > 1 && ` · saved as ${parts} linked parts`}
+          </span>
           <span role="status">
             {saved
               ? "Draft saved on this device"
@@ -189,7 +259,7 @@ export default function CaptureDialog({
             disabled={busy || !text.trim()}
           >
             <Check size={16} />
-            {busy ? "Saving…" : "Confirm capture & organize"}
+            {busy ? progress || "Saving…" : "Confirm capture & organize"}
           </button>
         </div>
       </form>

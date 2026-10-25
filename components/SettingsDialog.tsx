@@ -4,15 +4,19 @@ import Dialog from "./Dialog";
 import ThemeSelect from "./ThemeSelect";
 import { download, readTextFile } from "../lib/files";
 import { parseBackup } from "../lib/validation";
-import type { Store } from "../lib/model";
+import type { Settings, Store } from "../lib/model";
+import { templates } from "../lib/templates";
+import { disableReminders, enableReminders } from "../lib/reminders";
 export default function SettingsDialog({
   store,
   onClose,
+  onSettings,
   onRestore,
   onReset,
 }: {
   store: Store;
   onClose: () => void;
+  onSettings: (settings: Settings) => Promise<void>;
   onRestore: (store: Store) => Promise<void>;
   onReset: () => void;
 }) {
@@ -20,6 +24,18 @@ export default function SettingsDialog({
   const [backup, setBackup] = useState<Store | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const settings = store.settings || {};
+  async function save(next: Settings) {
+    setBusy(true);
+    setError("");
+    try {
+      await onSettings(next);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <Dialog
       title="Settings & privacy"
@@ -33,6 +49,61 @@ export default function SettingsDialog({
           <p className="muted">Choose a theme or follow your device.</p>
         </div>
         <ThemeSelect />
+      </div>
+      <div className="settings-section">
+        <h3>Defaults</h3>
+        <div className="form-grid">
+          <label>
+            Default project type
+            <select
+              value={settings.defaultTemplate || "general"}
+              disabled={busy}
+              onChange={(e) =>
+                void save({ ...settings, defaultTemplate: e.target.value })
+              }
+            >
+              {Object.entries(templates).map(([key, t]) => (
+                <option key={key} value={key}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Flag unanswered questions after (days)
+            <input
+              type="number"
+              min={1}
+              max={90}
+              defaultValue={settings.questionAgeDays ?? 3}
+              disabled={busy}
+              onBlur={(e) => {
+                const days = Number(e.target.value);
+                if (Number.isSafeInteger(days) && days >= 1 && days <= 90)
+                  void save({ ...settings, questionAgeDays: days });
+                else setError("Enter a whole number of days from 1 to 90.");
+              }}
+            />
+          </label>
+        </div>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={!!settings.reminders}
+            disabled={busy}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setError("");
+              // The permission request must start inside this click.
+              const change = on ? enableReminders() : disableReminders();
+              void change
+                .then(() => save({ ...settings, reminders: on }))
+                .catch((error) => setError((error as Error).message));
+            }}
+          />
+          Browser reminders for overdue milestones and payments (asks for
+          notification permission; checked twice a day)
+        </label>
       </div>
       <div className="settings-section">
         <h3>Local processing</h3>

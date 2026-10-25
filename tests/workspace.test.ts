@@ -3,14 +3,21 @@ import assert from "node:assert/strict";
 import {
   addCapture,
   approve,
+  changeOrderMessage,
   contentHash,
   createProject,
   csv,
   editItem,
   id,
+  markdown,
   redact,
   removeCapture,
   reviewProposal,
+  revisionSummary,
+  revisionUsage,
+  saveRevision,
+  setChangeOrder,
+  setRevisionPolicy,
   type Capture,
 } from "../lib/model";
 import { parseBackup, validateStore } from "../lib/validation";
@@ -159,4 +166,116 @@ test("milestone dependency cycles are rejected during storage validation", () =>
     () => validateStore({ projects: [p], drafts: {} }),
     /cannot form a cycle/,
   );
+});
+test("exclusions are organized into their own section and exported", async () => {
+  const p = addCapture(
+    createProject("Site", "Client", "Independent"),
+    await source("Build a homepage.\nLogo design is not included."),
+  );
+  assert.deepEqual(
+    p.items.map((i) => i.section),
+    ["requirements", "exclusions"],
+  );
+  assert.match(
+    markdown(approve(p)),
+    /## exclusions\n- Logo design is not included\./,
+  );
+});
+test("revision limit is never guessed and usage flags requests beyond it", async () => {
+  let p = addCapture(
+    createProject("Logo", "Client", "Fiverr"),
+    await source("The package includes 2 revisions."),
+  );
+  assert.equal(revisionUsage(p).limit, undefined);
+  assert.match(revisionSummary(p), /unknown/);
+  assert.throws(
+    () =>
+      setRevisionPolicy(p, {
+        limit: 2,
+        sourceId: p.sources[0].id,
+        excerpt: "3 revisions",
+      }),
+    /exact words/,
+  );
+  p = setRevisionPolicy(p, {
+    limit: 2,
+    sourceId: p.sources[0].id,
+    excerpt: "includes 2 revisions",
+  });
+  const revision = (note: string, counts = true) => ({
+    id: id(),
+    note,
+    deliverable: "",
+    requestedAt: "2026-10-20",
+    status: "requested" as const,
+    counts,
+    manual: true,
+  });
+  p = saveRevision(p, revision("Change colors"));
+  p = saveRevision(p, revision("Fix my typo", false));
+  p = saveRevision(p, revision("Bigger font"));
+  assert.deepEqual(revisionUsage(p), {
+    used: 2,
+    limit: 2,
+    over: false,
+    exhausted: true,
+  });
+  p = saveRevision(p, revision("New icon"));
+  assert.equal(revisionUsage(p).over, true);
+  assert.throws(
+    () => saveRevision(p, { ...revision("Bad"), requestedAt: "2026-02-30" }),
+    /valid request date/,
+  );
+  const restored = parseBackup(JSON.stringify({ projects: [p], drafts: {} }))
+    .projects[0];
+  assert.equal(restored.revisions?.length, 4);
+  assert.equal(removeCapture(p, p.sources[0].id).revisionPolicy, undefined);
+});
+test("change orders keep user-entered price and are validated on restore", async () => {
+  let p = approve(
+    addCapture(
+      createProject("Site", "Client", "Upwork"),
+      await source("Build a homepage."),
+    ),
+  );
+  p = addCapture(p, await source("Can you also add a blog?"));
+  const proposal = p.proposals[0];
+  const message = changeOrderMessage({
+    client: "Client",
+    kind: "scope",
+    request: proposal.item.text,
+    version: 1,
+    currency: "",
+    tone: "concise",
+  });
+  assert.match(message, /isn't part of the scope we agreed \(brief v1\)/);
+  assert.match(message, /confirm the additional cost/);
+  assert.doesNotMatch(message, /\d+\.\d\d|\$/);
+  const order = {
+    amount: 150,
+    currency: "USD",
+    extraDays: 3,
+    message: "Hi",
+    status: "sent" as const,
+    updatedAt: new Date().toISOString(),
+  };
+  assert.throws(
+    () => setChangeOrder(p, proposal.id, { ...order, amount: 1.234 }),
+    /2 decimals/,
+  );
+  assert.throws(
+    () => setChangeOrder(p, proposal.id, { ...order, currency: "usd" }),
+    /currency code/,
+  );
+  p = setChangeOrder(p, proposal.id, order);
+  assert.deepEqual(p.proposals[0].item, proposal.item);
+  assert.equal(p.proposals[0].status, "pending");
+  const backup = JSON.parse(JSON.stringify({ projects: [p], drafts: {} }));
+  assert.equal(
+    parseBackup(JSON.stringify(backup)).projects[0].proposals[0].changeOrder
+      ?.amount,
+    150,
+  );
+  backup.projects[0].proposals[0].changeOrder.amount = -5;
+  assert.throws(() => parseBackup(JSON.stringify(backup)), /positive amount/);
 });

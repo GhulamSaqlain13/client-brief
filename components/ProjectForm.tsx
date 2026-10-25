@@ -2,15 +2,19 @@ import { useState } from "react";
 import { FolderPlus } from "lucide-react";
 import Dialog from "./Dialog";
 import { createProject, platforms, type Project } from "../lib/model";
+import { applyTemplate } from "../lib/planning";
+import { templates } from "../lib/templates";
 
 export default function ProjectForm({
   project,
   clients,
+  defaultTemplate,
   onClose,
   onSave,
 }: {
   project?: Project;
   clients: string[];
+  defaultTemplate?: string;
   onClose: () => void;
   onSave: (project: Project) => Promise<void>;
 }) {
@@ -22,6 +26,9 @@ export default function ProjectForm({
   );
   const [notes, setNotes] = useState(project?.notes || "");
   const [tags, setTags] = useState(project?.tags || "");
+  const [template, setTemplate] = useState(
+    project?.template || (project ? "" : defaultTemplate || "general"),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -38,7 +45,7 @@ export default function ProjectForm({
           setError("");
           try {
             const value = createProject(title.trim(), client.trim(), platform);
-            await onSave({
+            const next: Project = {
               ...project,
               ...value,
               ...(project
@@ -55,7 +62,12 @@ export default function ProjectForm({
               status,
               notes,
               tags,
-            });
+            };
+            await onSave(
+              template && template !== project?.template
+                ? applyTemplate(next, template)
+                : next,
+            );
             onClose();
           } catch (error) {
             setError((error as Error).message);
@@ -119,6 +131,24 @@ export default function ProjectForm({
             </select>
           </label>
         </div>
+        <label>
+          Project type
+          <select
+            value={template}
+            onChange={(e) => setTemplate(e.target.value)}
+          >
+            {!template && <option value="">Not set</option>}
+            {Object.entries(templates).map(([key, t]) => (
+              <option key={key} value={key}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint">
+            Adds a starter checklist and suggested questions you can choose
+            from.
+          </span>
+        </label>
         <label>
           Tags
           <input

@@ -16,6 +16,8 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
+  Upload,
   ShieldCheck,
   Trash2,
   Users,
@@ -33,6 +35,34 @@ import BriefView from "../components/BriefView";
 import ChangesView from "../components/ChangesView";
 import QuestionsView from "../components/QuestionsView";
 import MilestoneEditor from "../components/MilestoneEditor";
+import ChangeOrderDialog from "../components/ChangeOrderDialog";
+import RevisionsView from "../components/RevisionsView";
+import RevisionEditor, {
+  RevisionPolicyEditor,
+} from "../components/RevisionEditor";
+import ChecklistView from "../components/ChecklistView";
+import PaymentsView, { PaymentEditor } from "../components/PaymentsView";
+import ClientSummaryDialog from "../components/ClientSummaryDialog";
+import ClientsView, { ClientEditor } from "../components/ClientsView";
+import AttentionPanel from "../components/AttentionPanel";
+import {
+  applyTemplate,
+  attention,
+  clientNames,
+  deleteClient,
+  readiness,
+  recordConfirmation,
+  saveChecklistItem,
+  saveClient,
+  savePayment,
+} from "../lib/planning";
+import { templates } from "../lib/templates";
+import { splitThread } from "../lib/conversation";
+import {
+  EmptyIllustration,
+  HeroIllustration,
+  StepIllustration,
+} from "../components/Illustrations";
 import { useWorkspace } from "../hooks/useWorkspace";
 import {
   addCapture,
@@ -47,17 +77,32 @@ import {
   platforms,
   removeCapture,
   reviewProposal,
+  revisionUsage,
+  saveRevision,
+  setChangeOrder,
+  setRevisionPolicy,
+  type ClientRecord,
   type Item,
   type Milestone,
+  type Payment,
   type Project,
   type Proposal,
+  type Revision,
   type Section,
 } from "../lib/model";
 import { copy, download, fileName } from "../lib/files";
 import { extension, rawWorkspace, resetInvalidWorkspace } from "../lib/storage";
 
 type Tab =
-  "brief" | "sources" | "changes" | "questions" | "milestones" | "history";
+  | "brief"
+  | "sources"
+  | "changes"
+  | "questions"
+  | "checklist"
+  | "revisions"
+  | "milestones"
+  | "payments"
+  | "history";
 type Modal =
   | "create"
   | "edit-project"
@@ -65,6 +110,12 @@ type Modal =
   | "settings"
   | "item"
   | "milestone"
+  | "revision"
+  | "revision-policy"
+  | "change-order"
+  | "payment"
+  | "client"
+  | "summary"
   | null;
 type Confirmation = {
   title: string;
@@ -78,7 +129,10 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "sources", label: "Sources" },
   { id: "changes", label: "Changes" },
   { id: "questions", label: "Questions" },
+  { id: "checklist", label: "Checklist" },
+  { id: "revisions", label: "Revisions" },
   { id: "milestones", label: "Milestones" },
+  { id: "payments", label: "Payments" },
   { id: "history", label: "Version history" },
 ];
 const date = (value: string) =>
@@ -119,13 +173,61 @@ export default function Dashboard() {
   const [edit, setEdit] = useState<Item | undefined>();
   const [section, setSection] = useState<Section>("requirements");
   const [milestone, setMilestone] = useState<Milestone | undefined>();
+  const [revision, setRevision] = useState<Revision | undefined>();
+  const [payment, setPayment] = useState<Payment | undefined>();
+  const [clientEdit, setClientEdit] = useState<{
+    record: ClientRecord;
+    isNew: boolean;
+  }>();
+  const [orderFor, setOrderFor] = useState<
+    | { kind: "scope"; proposal: Proposal }
+    | { kind: "revision"; revision: Revision }
+  >();
+  const [importNext, setImportNext] = useState(false);
+  const [captureFor, setCaptureFor] = useState("");
   const project = store.projects.find((p) => p.id === selected);
-  const clients = [...new Set(store.projects.map((p) => p.client))].sort();
+  const clients = clientNames(store);
+  const alerts = attention(store);
+  const template = project?.template ? templates[project.template] : undefined;
+  // Template suggestions become manual items; after approval they are proposals.
+  function addSuggested(section: Section, text: string) {
+    if (!project) return;
+    void run(
+      async () => {
+        await updateProject(project, (p) =>
+          editItem(p, {
+            id: id(),
+            section,
+            text,
+            state: "proposed",
+            manual: true,
+            priority: "should",
+          }),
+        );
+      },
+      project.versions.length
+        ? "Suggestion proposed. Review it in Changes."
+        : "Suggestion added to the brief.",
+    );
+  }
   const active = store.projects.filter((p) => !p.archived);
   const changes = active.reduce(
     (n, p) => n + p.proposals.filter((c) => c.status === "pending").length,
     0,
   );
+  const approvedCount = active.filter((p) => p.versions.length).length;
+  const gettingStarted = [
+    { label: "Add your first client", done: store.projects.length > 0 },
+    {
+      label: "Paste a conversation",
+      done: store.projects.some((p) => p.sources.length),
+    },
+    {
+      label: "Approve your first brief",
+      done: store.projects.some((p) => p.versions.length),
+    },
+  ];
+  const stepsDone = gettingStarted.filter((s) => s.done).length;
   const pendingCount =
     project?.proposals.filter((p) => p.status === "pending").length || 0;
   function notify(text: string, isError = false) {
@@ -231,6 +333,17 @@ export default function Dashboard() {
     setSection(item.section);
     setModal("item");
   }
+  // Import starts a new project, then opens capture where files can be imported.
+  function importTranscript() {
+    setImportNext(true);
+    setModal("create");
+  }
+  useEffect(() => {
+    if (captureFor && project?.id === captureFor && !modal) {
+      setCaptureFor("");
+      setModal("capture");
+    }
+  }, [captureFor, project, modal]);
   function capture() {
     if (!project) {
       notify("Open or create a project, then review the selection.");
@@ -306,6 +419,15 @@ export default function Dashboard() {
         execute,
       );
     else void run(execute);
+  }
+  function openChangeOrder(
+    target:
+      | { kind: "scope"; proposal: Proposal }
+      | { kind: "revision"; revision: Revision },
+  ) {
+    setSnapshot(project);
+    setOrderFor(target);
+    setModal("change-order");
   }
   const filtered = store.projects
     .filter((p) => {
@@ -426,11 +548,61 @@ export default function Dashboard() {
                 </button>
               ))}
             {ready && !active.length && (
-              <p className="sidebar-empty">
-                Your project briefs will appear here.
-              </p>
+              <div className="sidebar-empty">
+                <span className="recent-placeholder" aria-hidden="true">
+                  <i />
+                  <b />
+                </span>
+                <span className="recent-placeholder short" aria-hidden="true">
+                  <i />
+                  <b />
+                </span>
+                <p>Projects you open show up here.</p>
+              </div>
             )}
           </div>
+          {ready && stepsDone < gettingStarted.length && (
+            <section
+              className="getting-started"
+              aria-label="Getting started progress"
+            >
+              <svg viewBox="0 0 140 140" aria-hidden="true">
+                <circle cx="70" cy="70" r="64" />
+                <circle cx="70" cy="70" r="44" />
+                <circle className="core" cx="70" cy="70" r="24" />
+                <circle className="spark" cx="114" cy="40" r="4" />
+              </svg>
+              <div>
+                <small>Getting started</small>
+                <strong>
+                  {stepsDone} of {gettingStarted.length} steps done
+                </strong>
+              </div>
+              <div
+                className="progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={gettingStarted.length}
+                aria-valuenow={stepsDone}
+                aria-label="Setup progress"
+              >
+                <span
+                  style={{
+                    width: `${Math.max(6, (stepsDone / gettingStarted.length) * 100)}%`,
+                  }}
+                />
+              </div>
+              <ul>
+                {gettingStarted.map((s) => (
+                  <li key={s.label} className={s.done ? "done" : ""}>
+                    <span>{s.done && <Check size={11} strokeWidth={3} />}</span>
+                    {s.label}
+                    {s.done && <span className="visually-hidden"> (done)</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <div className="sidebar-bottom">
             <div className="privacy-note">
               <ShieldCheck size={19} />
@@ -555,61 +727,98 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            <div className="page-heading">
-              {project && (
-                <button className="text-button back-link" onClick={allProjects}>
-                  <ArrowLeft size={16} />
-                  All projects
-                </button>
-              )}
-              <div className="heading-row">
-                <div>
-                  <h1>
-                    {project
-                      ? project.title
-                      : view === "clients"
-                        ? "Clients"
-                        : "Projects"}
-                  </h1>
+            {showLibrary && view === "projects" ? (
+              <section className="hero" aria-labelledby="projects-title">
+                <div className="hero-copy">
+                  <span className="hero-pill">
+                    <Sparkles size={14} />
+                    Conversation → scope, on your device
+                  </span>
+                  <h1 id="projects-title">Projects</h1>
                   <p>
-                    {project
-                      ? `${project.client} · ${project.platform}`
-                      : view === "clients"
-                        ? "A clear view of who you work with."
-                        : "Turn conversations into scope you can confidently work from."}
+                    Turn conversations into scope you can confidently work from.
                   </p>
-                </div>
-                <div className="heading-actions">
-                  {project ? (
-                    <>
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setSnapshot(project);
-                          setModal("edit-project");
-                        }}
-                      >
-                        <Settings size={16} />
-                        Project settings
-                      </button>
-                      <button className="primary" onClick={capture}>
-                        <Plus size={17} />
-                        Add conversation
-                      </button>
-                    </>
-                  ) : (
+                  <div className="hero-actions">
                     <button
-                      className="primary"
+                      className="primary large"
                       onClick={() => setModal("create")}
                       disabled={!ready}
                     >
-                      <Plus size={17} />
+                      <Plus size={18} strokeWidth={2.2} />
                       New project
                     </button>
-                  )}
+                    <button
+                      className="secondary large"
+                      onClick={importTranscript}
+                      disabled={!ready}
+                    >
+                      <Upload size={18} />
+                      Import transcript
+                    </button>
+                  </div>
+                </div>
+                <HeroIllustration />
+              </section>
+            ) : (
+              <div className="page-heading">
+                {project && (
+                  <button
+                    className="text-button back-link"
+                    onClick={allProjects}
+                  >
+                    <ArrowLeft size={16} />
+                    All projects
+                  </button>
+                )}
+                <div className="heading-row">
+                  <div>
+                    <h1>
+                      {project
+                        ? project.title
+                        : view === "clients"
+                          ? "Clients"
+                          : "Projects"}
+                    </h1>
+                    <p>
+                      {project
+                        ? `${project.client} · ${project.platform}`
+                        : view === "clients"
+                          ? "A clear view of who you work with."
+                          : "Turn conversations into scope you can confidently work from."}
+                    </p>
+                  </div>
+                  <div className="heading-actions">
+                    {project ? (
+                      <>
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setSnapshot(project);
+                            setModal("edit-project");
+                          }}
+                        >
+                          <Settings size={16} />
+                          Project settings
+                        </button>
+                        <button className="primary" onClick={capture}>
+                          <Plus size={17} />
+                          Add conversation
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="primary"
+                        onClick={() => setModal("create")}
+                        disabled={!ready}
+                      >
+                        <Plus size={17} />
+                        New project
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
             {pending && (
               <div className="capture-banner">
                 <MessageSquare size={20} />
@@ -652,84 +861,108 @@ export default function Dashboard() {
                 <>
                   {showLibrary && (
                     <div className="workspace-metrics">
-                      <div>
-                        <Folder size={18} />
-                        <strong>{active.length}</strong>
-                        <span>Active projects</span>
-                      </div>
-                      <div>
-                        <ShieldCheck size={18} />
-                        <strong>
-                          {active.filter((p) => p.versions.length).length}
-                        </strong>
-                        <span>Approved briefs</span>
-                      </div>
-                      <div>
-                        <MessageSquare size={18} />
-                        <strong>{changes}</strong>
-                        <span>Changes to review</span>
-                      </div>
+                      {[
+                        {
+                          tone: "accent",
+                          Icon: Folder,
+                          value: active.length,
+                          label: "Active projects",
+                        },
+                        {
+                          tone: "success",
+                          Icon: ShieldCheck,
+                          value: approvedCount,
+                          label: "Approved briefs",
+                        },
+                        {
+                          tone: "warning",
+                          Icon: MessageSquare,
+                          value: changes,
+                          label: "Changes to review",
+                        },
+                      ].map(({ tone, Icon, value, label }) => (
+                        <div className={`metric metric-${tone}`} key={label}>
+                          <span className="metric-icon">
+                            <Icon size={22} />
+                          </span>
+                          <div>
+                            <strong>{value}</strong>
+                            <span>{label}</span>
+                          </div>
+                          <svg viewBox="0 0 72 36" aria-hidden="true">
+                            <path d="M2 30 H70" />
+                            <circle cx="70" cy="30" r="3.5" />
+                          </svg>
+                        </div>
+                      ))}
                     </div>
                   )}
+                  {showLibrary && view === "projects" && (
+                    <AttentionPanel
+                      items={alerts}
+                      onOpen={(projectId) => {
+                        const target = store.projects.find(
+                          (p) => p.id === projectId,
+                        );
+                        if (target) openProject(target);
+                      }}
+                    />
+                  )}
                   {showLibrary && view === "clients" ? (
-                    <div className="client-list">
-                      {clients.length ? (
-                        clients.map((client) => {
-                          const projects = store.projects.filter(
-                            (p) => p.client === client,
-                          );
-                          return (
-                            <article className="client-row" key={client}>
-                              <span className="project-icon">
-                                <Building2 size={20} />
-                              </span>
-                              <div>
-                                <h2>{client}</h2>
-                                <p className="muted">
-                                  {projects.length} projects ·{" "}
-                                  {projects.filter((p) => !p.archived).length}{" "}
-                                  active
-                                </p>
-                              </div>
-                              <button
-                                className="secondary"
-                                onClick={() => {
-                                  setView("projects");
-                                  setArchive("all");
-                                  setSearch(client);
-                                  setPage(0);
-                                }}
-                              >
-                                View projects
-                                <ArrowRight size={16} />
-                              </button>
-                            </article>
-                          );
-                        })
-                      ) : (
-                        <div className="inline-empty">
-                          <Users size={28} />
-                          <h2>No clients yet</h2>
-                          <p>
-                            Clients appear when you create your first project.
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    <ClientsView
+                      store={store}
+                      onNew={() => {
+                        setModal("client");
+                        setClientEdit({
+                          record: {
+                            id: id(),
+                            name: "",
+                            createdAt: new Date().toISOString(),
+                          },
+                          isNew: true,
+                        });
+                      }}
+                      onEdit={(record) => {
+                        setClientEdit({ record, isNew: false });
+                        setModal("client");
+                      }}
+                      onDelete={(record) =>
+                        ask(
+                          "Delete client?",
+                          `Remove the client record for ${record.name}. This client has no projects.`,
+                          "Delete client",
+                          async () => {
+                            await commit((s) => deleteClient(s, record.id));
+                            notify("Client deleted.");
+                          },
+                          true,
+                        )
+                      }
+                      onProjects={(name) => {
+                        setView("projects");
+                        setArchive("all");
+                        setSearch(name);
+                        setPage(0);
+                      }}
+                    />
                   ) : showLibrary ? (
                     <>
                       <div className="library-toolbar">
-                        <label className="search">
-                          <Search size={17} />
-                          <input
-                            aria-label="Search projects"
-                            value={search}
-                            placeholder="Search projects, clients, or scope…"
-                            onChange={(e) => {
-                              setSearch(e.target.value);
-                              setPage(0);
-                            }}
-                          />
+                        <label className="search-field">
+                          Search
+                          <span className="search">
+                            <Search size={18} />
+                            <input
+                              type="search"
+                              aria-label="Search projects"
+                              value={search}
+                              placeholder="Search projects, clients, or scope…"
+                              onChange={(e) => {
+                                setSearch(e.target.value);
+                                setPage(0);
+                              }}
+                            />
+                          </span>
                         </label>
                         <div className="library-filters">
                           <label className="compact-label">
@@ -799,38 +1032,88 @@ export default function Dashboard() {
                         </div>
                       </div>
                       {!store.projects.length ? (
-                        <div className="empty-state">
-                          <div className="empty-art">
-                            <FileText size={36} />
-                          </div>
-                          <h2>Start with a conversation.</h2>
-                          <p>
-                            Create a project, capture what your client said,
-                            <br />
-                            and turn it into a brief you can review.
-                          </p>
-                          <button
-                            className="primary"
-                            onClick={() => setModal("create")}
+                        <>
+                          <section className="empty-state">
+                            <EmptyIllustration />
+                            <div className="empty-copy">
+                              <span className="pill">No projects yet</span>
+                              <h2>Start with a conversation.</h2>
+                              <p>
+                                Create a project, capture what your client said,
+                                and turn it into a brief you can review.
+                              </p>
+                              <ul className="empty-features">
+                                {[
+                                  ["accent", "Source-linked requirements"],
+                                  ["success", "Scope version history"],
+                                  ["warning", "Stored on your device"],
+                                ].map(([tone, label]) => (
+                                  <li className={`tone-${tone}`} key={label}>
+                                    <span>
+                                      <Check size={12} strokeWidth={3} />
+                                    </span>
+                                    {label}
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="hero-actions">
+                                <button
+                                  className="primary large"
+                                  onClick={() => setModal("create")}
+                                >
+                                  <Plus size={18} strokeWidth={2.2} />
+                                  Create your first project
+                                </button>
+                                <a className="link-button" href="#how">
+                                  See how it works
+                                  <ArrowRight size={16} />
+                                </a>
+                              </div>
+                            </div>
+                          </section>
+                          <section
+                            id="how"
+                            className="how-it-works"
+                            aria-labelledby="how-title"
                           >
-                            <Plus size={17} />
-                            Create your first project
-                          </button>
-                          <div className="empty-features">
-                            <span>
-                              <Check size={15} />
-                              Source-linked requirements
-                            </span>
-                            <span>
-                              <Check size={15} />
-                              Scope version history
-                            </span>
-                            <span>
-                              <Check size={15} />
-                              Stored on your device
-                            </span>
-                          </div>
-                        </div>
+                            <div className="how-heading">
+                              <h2 id="how-title">How it works</h2>
+                              <span>
+                                Three steps from call to confident scope
+                              </span>
+                            </div>
+                            <ol>
+                              {(
+                                [
+                                  [
+                                    1,
+                                    "Capture the conversation",
+                                    "Paste notes, a chat or a call transcript into a project.",
+                                  ],
+                                  [
+                                    2,
+                                    "Extract linked scope",
+                                    "Every requirement points back to the exact words it came from.",
+                                  ],
+                                  [
+                                    3,
+                                    "Review & approve",
+                                    "Compare versions, resolve changes and lock in an approved brief.",
+                                  ],
+                                ] as const
+                              ).map(([step, title, body]) => (
+                                <li key={step} className={`step step-${step}`}>
+                                  <StepIllustration step={step} />
+                                  <div>
+                                    <span>0{step}</span>
+                                    <h3>{title}</h3>
+                                    <p>{body}</p>
+                                  </div>
+                                </li>
+                              ))}
+                            </ol>
+                          </section>
+                        </>
                       ) : !filtered.length ? (
                         <div className="inline-empty">
                           <Search size={26} />
@@ -888,6 +1171,12 @@ export default function Dashboard() {
                                   ).length
                                 }{" "}
                                 pending
+                                {readiness(p).percent !== undefined && (
+                                  <small>
+                                    {" "}
+                                    · {readiness(p).percent}% ready
+                                  </small>
+                                )}
                               </span>
                               <span className="project-date">
                                 {date(p.createdAt)}
@@ -945,6 +1234,40 @@ export default function Dashboard() {
                           <span>{status(project)}</span>
                           <span>{project.sources.length} captures</span>
                           <span>{project.items.length} brief items</span>
+                          {(!!project.revisionPolicy ||
+                            !!project.revisions?.length) && (
+                            <span
+                              className={
+                                revisionUsage(project).exhausted
+                                  ? "summary-warning"
+                                  : undefined
+                              }
+                            >
+                              Revisions {revisionUsage(project).used}
+                              {project.revisionPolicy &&
+                                ` of ${project.revisionPolicy.limit}`}
+                            </span>
+                          )}
+                          {readiness(project).percent !== undefined && (
+                            <span
+                              className={
+                                readiness(project).percent! < 100
+                                  ? "summary-warning"
+                                  : undefined
+                              }
+                            >
+                              {readiness(project).percent}% ready to start
+                            </span>
+                          )}
+                          {project.confirmations?.some(
+                            (c) =>
+                              c.version === project.versions.at(-1)?.number,
+                          ) && (
+                            <span className="summary-success">
+                              Client confirmed v
+                              {project.versions.at(-1)!.number}
+                            </span>
+                          )}
                           {project.tags && <span>{project.tags}</span>}
                           <button
                             className="text-button"
@@ -1100,6 +1423,13 @@ export default function Dashboard() {
                                   )
                                 }
                                 onExport={exportBrief}
+                                onSummary={() => setModal("summary")}
+                                exclusionSuggestions={
+                                  template?.exclusions || []
+                                }
+                                onSuggestExclusion={(text) =>
+                                  addSuggested("exclusions", text)
+                                }
                               />
                             )}
                             {tab === "changes" && (
@@ -1107,6 +1437,51 @@ export default function Dashboard() {
                                 project={project}
                                 busy={busy}
                                 onReview={review}
+                                onChangeOrder={(proposal) =>
+                                  openChangeOrder({ kind: "scope", proposal })
+                                }
+                              />
+                            )}
+                            {tab === "revisions" && (
+                              <RevisionsView
+                                project={project}
+                                onPolicy={() => {
+                                  setSnapshot(project);
+                                  setModal("revision-policy");
+                                }}
+                                onAdd={() => {
+                                  setSnapshot(project);
+                                  setRevision(undefined);
+                                  setModal("revision");
+                                }}
+                                onEdit={(r) => {
+                                  setSnapshot(project);
+                                  setRevision(r);
+                                  setModal("revision");
+                                }}
+                                onChangeOrder={(r) =>
+                                  openChangeOrder({
+                                    kind: "revision",
+                                    revision: r,
+                                  })
+                                }
+                                onRemove={(r) =>
+                                  ask(
+                                    "Delete revision?",
+                                    "This removes the revision request and any extra-revision request saved with it.",
+                                    "Delete revision",
+                                    async () => {
+                                      await updateProject(project, (p) => ({
+                                        ...p,
+                                        revisions: p.revisions?.filter(
+                                          (x) => x.id !== r.id,
+                                        ),
+                                      }));
+                                      notify("Revision deleted.");
+                                    },
+                                    true,
+                                  )
+                                }
                               />
                             )}
                             {tab === "questions" && (
@@ -1120,7 +1495,12 @@ export default function Dashboard() {
                                       ...p,
                                       items: p.items.map((i) =>
                                         i.id === item.id
-                                          ? { ...i, questionStatus }
+                                          ? {
+                                              ...i,
+                                              questionStatus,
+                                              questionUpdatedAt:
+                                                new Date().toISOString(),
+                                            }
                                           : i,
                                       ),
                                     }));
@@ -1130,6 +1510,70 @@ export default function Dashboard() {
                                   void run(
                                     async () => copy(text),
                                     "Clarification copied. Send it through your usual client channel.",
+                                  )
+                                }
+                                suggestions={template?.questions || []}
+                                onSuggest={(text) =>
+                                  addSuggested("questions", text)
+                                }
+                              />
+                            )}
+                            {tab === "checklist" && (
+                              <ChecklistView
+                                project={project}
+                                busy={busy}
+                                onTemplate={(t) =>
+                                  void run(async () => {
+                                    await updateProject(project, (p) =>
+                                      applyTemplate(p, t),
+                                    );
+                                  }, "Project type saved. Missing starter items were added.")
+                                }
+                                onSave={async (item) => {
+                                  await updateProject(project, (p) =>
+                                    saveChecklistItem(p, item),
+                                  );
+                                }}
+                                onRemove={(item) =>
+                                  void run(async () => {
+                                    await updateProject(project, (p) => ({
+                                      ...p,
+                                      checklist: p.checklist?.filter(
+                                        (c) => c.id !== item.id,
+                                      ),
+                                    }));
+                                  }, "Checklist item removed.")
+                                }
+                              />
+                            )}
+                            {tab === "payments" && (
+                              <PaymentsView
+                                project={project}
+                                onAdd={() => {
+                                  setSnapshot(project);
+                                  setPayment(undefined);
+                                  setModal("payment");
+                                }}
+                                onEdit={(p) => {
+                                  setSnapshot(project);
+                                  setPayment(p);
+                                  setModal("payment");
+                                }}
+                                onRemove={(pay) =>
+                                  ask(
+                                    "Delete payment?",
+                                    "This removes the payment record from this project.",
+                                    "Delete payment",
+                                    async () => {
+                                      await updateProject(project, (p) => ({
+                                        ...p,
+                                        payments: p.payments?.filter(
+                                          (x) => x.id !== pay.id,
+                                        ),
+                                      }));
+                                      notify("Payment deleted.");
+                                    },
+                                    true,
                                   )
                                 }
                               />
@@ -1386,6 +1830,23 @@ export default function Dashboard() {
                                       {new Date(v.approvedAt).toLocaleString()}{" "}
                                       · {v.items.length} items
                                     </p>
+                                    {project.confirmations
+                                      ?.filter((c) => c.version === v.number)
+                                      .map((c) => (
+                                        <details
+                                          key={c.id}
+                                          className="confirmation"
+                                        >
+                                          <summary>
+                                            <ShieldCheck size={14} /> Client
+                                            confirmed · recorded{" "}
+                                            {new Date(
+                                              c.recordedAt,
+                                            ).toLocaleDateString()}
+                                          </summary>
+                                          <blockquote>{c.excerpt}</blockquote>
+                                        </details>
+                                      ))}
                                     <details>
                                       <summary>View approved scope</summary>
                                       {sectionsForHistory(v.items)}
@@ -1463,13 +1924,18 @@ export default function Dashboard() {
         <ProjectForm
           project={modal === "edit-project" ? snapshot : undefined}
           clients={clients}
-          onClose={() => setModal(null)}
+          defaultTemplate={store.settings?.defaultTemplate}
+          onClose={() => {
+            setModal(null);
+            setImportNext(false);
+          }}
           onSave={async (value) => {
             if (modal === "edit-project" && snapshot)
               await updateProject(snapshot, () => value);
             else {
               await commit((s) => ({ ...s, projects: [...s.projects, value] }));
               openProject(value);
+              if (importNext) setCaptureFor(value.id);
             }
             notify(
               modal === "edit-project"
@@ -1492,28 +1958,58 @@ export default function Dashboard() {
               return { ...s, drafts: { ...s.drafts, [project.id]: text } };
             });
           }}
-          onSave={async (text, url) => {
-            const source = {
-              id: id(),
-              text: text.trim(),
-              url,
-              capturedAt: pending?.capturedAt || new Date().toISOString(),
-              hash: await contentHash(text),
-            };
-            await commit((s) => {
-              const p = s.projects.find((p) => p.id === project.id);
-              if (!p) throw Error("This project was deleted.");
-              const result = addCapture(p, source);
-              const drafts = { ...s.drafts };
-              delete drafts[p.id];
-              return {
-                ...s,
-                projects: s.projects.map((p) =>
-                  p.id === result.id ? result : p,
+          onSave={async (text, url, speakers, progress) => {
+            const parts = splitThread(text);
+            if (!parts.length) throw Error("Enter the conversation text.");
+            const capturedAt = pending?.capturedAt || new Date().toISOString();
+            for (const [index, part] of parts.entries()) {
+              progress(index, parts.length);
+              const hash = await contentHash(part);
+              const used = Object.fromEntries(
+                Object.entries(speakers).filter(([name]) =>
+                  part.includes(name),
                 ),
-                drafts,
+              );
+              const source = {
+                id: id(),
+                text: part,
+                url,
+                capturedAt,
+                hash,
+                ...(Object.keys(used).length ? { speakers: used } : {}),
               };
-            });
+              try {
+                await commit((s) => {
+                  const p = s.projects.find((p) => p.id === project.id);
+                  if (!p) throw Error("This project was deleted.");
+                  // Resuming a partly saved thread skips parts already captured.
+                  if (
+                    parts.length > 1 &&
+                    p.sources.some((x) => x.hash === hash)
+                  )
+                    return s;
+                  const result = addCapture(p, source);
+                  const drafts = { ...s.drafts };
+                  const rest = parts.slice(index + 1).join("\n");
+                  if (rest) drafts[p.id] = rest;
+                  else delete drafts[p.id];
+                  return {
+                    ...s,
+                    projects: s.projects.map((p) =>
+                      p.id === result.id ? result : p,
+                    ),
+                    drafts,
+                  };
+                });
+              } catch (error) {
+                throw Error(
+                  index
+                    ? `Saved ${index} of ${parts.length} parts. ${(error as Error).message} The remaining text is kept as a draft; retry to continue.`
+                    : (error as Error).message,
+                  { cause: error },
+                );
+              }
+            }
             if (extension() && pending) {
               try {
                 await chrome.storage.local.remove("pendingCapture");
@@ -1565,10 +2061,135 @@ export default function Dashboard() {
           }}
         />
       )}
+      {modal === "revision-policy" && project && (
+        <RevisionPolicyEditor
+          project={project}
+          onClose={() => setModal(null)}
+          onSave={async (policy) => {
+            await updateProject(snapshot || project, (p) =>
+              setRevisionPolicy(p, policy),
+            );
+            notify("Included revisions saved.");
+          }}
+        />
+      )}
+      {modal === "revision" && project && (
+        <RevisionEditor
+          project={project}
+          value={revision}
+          onClose={() => setModal(null)}
+          onSave={async (r) => {
+            await updateProject(snapshot || project, (p) => saveRevision(p, r));
+            const after = revisionUsage(saveRevision(project, r));
+            notify(
+              after.over
+                ? "Revision saved. It is beyond the agreed limit: draft an extra-revision request."
+                : "Revision saved.",
+            );
+          }}
+        />
+      )}
+      {modal === "change-order" && project && orderFor && (
+        <ChangeOrderDialog
+          kind={orderFor.kind}
+          client={project.client}
+          request={
+            orderFor.kind === "scope"
+              ? orderFor.proposal.item.text
+              : orderFor.revision.note
+          }
+          version={project.versions.at(-1)?.number}
+          limit={project.revisionPolicy?.limit}
+          value={
+            orderFor.kind === "scope"
+              ? orderFor.proposal.changeOrder
+              : orderFor.revision.changeOrder
+          }
+          defaultCurrency={
+            [
+              ...project.proposals.map((p) => p.changeOrder),
+              ...(project.revisions || []).map((r) => r.changeOrder),
+            ]
+              .reverse()
+              .find((o) => o?.currency)?.currency || ""
+          }
+          onClose={() => setModal(null)}
+          onCopy={(text) =>
+            void run(
+              async () => copy(text),
+              "Message copied. Send it through your usual client channel.",
+            )
+          }
+          onSave={async (order) => {
+            await updateProject(snapshot || project, (p) =>
+              orderFor.kind === "scope"
+                ? setChangeOrder(p, orderFor.proposal.id, order)
+                : saveRevision(p, {
+                    ...(p.revisions?.find(
+                      (r) => r.id === orderFor.revision.id,
+                    ) || orderFor.revision),
+                    changeOrder: order,
+                  }),
+            );
+            notify("Change order saved.");
+          }}
+        />
+      )}
+      {modal === "payment" && project && (
+        <PaymentEditor
+          project={project}
+          value={payment}
+          defaultCurrency={
+            [...(project.payments || [])].reverse().find((p) => p.currency)
+              ?.currency || ""
+          }
+          onClose={() => setModal(null)}
+          onSave={async (p) => {
+            await updateProject(snapshot || project, (x) => savePayment(x, p));
+            notify("Payment saved.");
+          }}
+        />
+      )}
+      {modal === "summary" && project && project.versions.length > 0 && (
+        <ClientSummaryDialog
+          project={project}
+          onClose={() => setModal(null)}
+          onCopy={(text) =>
+            void run(
+              async () => copy(text),
+              "Summary copied. Send it to your client and capture their reply.",
+            )
+          }
+          onConfirm={async (c) => {
+            await updateProject(project, (p) => recordConfirmation(p, c));
+            notify("Client confirmation recorded with evidence.");
+          }}
+        />
+      )}
+      {modal === "client" && clientEdit && (
+        <ClientEditor
+          value={clientEdit.record}
+          isNew={clientEdit.isNew}
+          onClose={() => setModal(null)}
+          onSave={async (c) => {
+            await commit((s) =>
+              saveClient(
+                s,
+                c,
+                clientEdit.isNew ? undefined : clientEdit.record.name,
+              ),
+            );
+            notify("Client saved.");
+          }}
+        />
+      )}
       {modal === "settings" && (
         <SettingsDialog
           store={store}
           onClose={() => setModal(null)}
+          onSettings={async (settings) => {
+            await commit((s) => ({ ...s, settings }));
+          }}
           onRestore={async (backup) => {
             await commit((s) => ({ ...backup, revision: s.revision }));
             allProjects();

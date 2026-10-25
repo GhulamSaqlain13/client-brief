@@ -1,6 +1,6 @@
 ﻿# Project memory
 
-Updated: 2026-10-22
+Updated: 2026-10-25
 
 ## Product and authority
 - ClientBrief AI: local-first Chrome extension for source-linked freelancer project briefs and approved scope history.
@@ -32,6 +32,7 @@ Updated: 2026-10-22
 - Explicit approval with valid evidence and resolved states; immutable version snapshots. Removing all scope can produce an empty subsequent baseline.
 - Later captures and approved-item edits/removals become proposals. Human classification, accept/reject/section replacement, review reason/timestamp.
 - Questions: open/asked/answered/blocked/not-needed status, copyable client clarification message. User sends manually.
+- 2026-10-25 (user request, suggestions #1/#2/#4): `exclusions` section; Proposal.changeOrder and Revision.changeOrder (user-entered amount/currency/extraDays/message/status, validated by checkChangeOrder); Project.revisionPolicy and revisions with evidence via checkEvidence; Revisions tab. Revision data is live metadata, not versioned scope; exports label it so. Removing a capture drops revisions/policy linked to it.
 - Milestones: manual date/status/acceptance/prerequisite editing, prerequisite flags, cycle validation.
 - Approved Markdown/JSON/CSV exports; CSV formula escaping; formatted print/PDF document and evidence appendix.
 - Full workspace backup, nested runtime validation, preview and explicit replacement restore.
@@ -41,16 +42,24 @@ Updated: 2026-10-22
 
 ## Design system
 - Bundled Inter Variable via @fontsource-variable/inter, including package font license. No remote font calls.
-- Restrained indigo accents, light neutral surfaces, dark slate surfaces, semantic success/warning/danger.
+- 2026-10-25: User asked to match `ClientBrief AI — Projects redesign.html` and use its palette. Tokens in globals.css follow it (indigo #5A52C7, deep navy #1E1B4B card, green/amber semantics); dark variant derived. redesign.css loaded last; illustrations in components/Illustrations.tsx use il-* token classes.
+- Projects library: hero with New project / Import transcript (creates a project, then opens capture), icon stat cards, labeled filters, illustrated empty state + How it works, sidebar Getting started card (hidden once all 3 real steps are done).
 - Shared colors in styles/globals.css; interactions in theme.css; typography.css and workspace.css handle readable type/layout.
 - 15px body, 14px controls, 12-13px metadata, 28-32px page headings; native dialogs and Lucide icons.
 - Persistent System/Light/Dark via localStorage clientbrief-theme, cross-page storage events and same-window custom events; CSP-safe prepaint theme script.
 - Native modal focus/Escape handling, arrow/Home/End tabs, compact client/project navigation, reduced-motion styling. Paper output is light.
 
+## Freelancer-pain features (2026-10-25, user asked to implement the whole suggestion list)
+- Implemented locally: change orders, revision counter, client summary + confirmations, Not included section, templates + checklist, speaker parsing, attention panel + opt-in reminders, client records, payments, rule-based change hints, PDF import + multi-part threads.
+- Hosted LLM (#11) deliberately NOT connected: user's earlier decision "choose later; keep processing local" stands. Only deterministic hints in lib/compare.ts.
+- Code: lib/conversation.ts (parsing/splitting), lib/compare.ts (hints), lib/planning.ts (checklist, payments, summary, attention, clients), lib/templates.ts, lib/pdf.ts, lib/reminders.ts. Store gained clients/settings; Project gained template/checklist/payments/confirmations.
+- Manifest: optional_permissions notifications+alarms (requested from Settings only); icons in public/icon-*.png. pdf.js worker is copied to public/pdf.worker.min.js by predev/prebuild (gitignored).
+- Payment amounts with evidence must appear in the quoted words. Confirmations require a quoted capture. Removing a capture drops linked payments/confirmations/revisions.
+
 ## Deliberately pending
 - Remote AI/backend/authentication/quotas/consent policy, semantic contradiction analysis, teams/cloud sync/sharing, billing, advanced integrations.
-- Independent client CRUD, profession/template onboarding, timezone/currency settings, speaker/message parsing, PDF import, resumable large threads, rich-text editing, full question-answer evidence links, retention scheduling, encryption.
-- Redaction covers common patterns only. Local storage is not an encrypted vault. Capture limit: 100,000 characters; backup import: 10 MB.
+- Guided sample onboarding, timezone/currency settings, OCR for scanned PDFs, rich-text editing, full question-answer evidence links, retention scheduling, encryption.
+- Redaction covers common patterns only. Local storage is not an encrypted vault. One capture: 100,000 characters (threads up to 1,000,000 are split); backup import: 10 MB.
 - Installed Chrome popup/side-panel/context-menu APIs need manual acceptance checks. Browser tests run the exported UI under its script CSP, not an installed extension.
 
 ## Commands and environment
